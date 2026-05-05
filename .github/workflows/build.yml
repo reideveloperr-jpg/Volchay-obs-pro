@@ -1,0 +1,84 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt6 + build deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            qt6-base-dev qt6-tools-dev qt6-tools-dev-tools \
+            cmake ninja-build g++ libgl-dev
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Smoke test (offscreen)
+        run: |
+          QT_QPA_PLATFORM=offscreen timeout 3 ./build/lumen-stream || true
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt 6.5
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.5.3'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2019_64'
+          modules: ''
+          cache: true
+
+      - name: Configure (MSVC x64)
+        shell: cmd
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 ^
+                -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        shell: cmd
+        run: cmake --build build --config Release --parallel
+
+      - name: Stage Windows package (windeployqt)
+        shell: pwsh
+        run: |
+          $stage = "stage/LumenStream"
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          Copy-Item "build/Release/LumenStream.exe" $stage
+
+          # Resolve windeployqt: install-qt-action sets QT_ROOT_DIR.
+          $qtRoot = $env:QT_ROOT_DIR
+          if (-not $qtRoot) { $qtRoot = $env:IQTA_QT_DIR }
+          if (-not $qtRoot) {
+            # Fallback: derive from Qt6_DIR (.../lib/cmake/Qt6).
+            $qtRoot = Resolve-Path (Join-Path $env:Qt6_DIR '..\..\..')
+          }
+          $deploy = Join-Path $qtRoot 'bin\windeployqt.exe'
+          Write-Host "Using windeployqt at: $deploy"
+          & $deploy `
+              --release --no-translations --no-system-d3d-compiler `
+              --no-opengl-sw --no-quick-import `
+              "$stage/LumenStream.exe"
+          Get-ChildItem $stage -Recurse | Select-Object FullName, Length
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LumenStream-windows-x64
+          path: stage/LumenStream
+          if-no-files-found: error
