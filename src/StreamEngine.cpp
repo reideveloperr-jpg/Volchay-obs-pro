@@ -18,16 +18,26 @@ QString encoderName(Encoder e) {
 }
 
 QString rateControlMode(RateControl rc, Encoder e) {
-    // Map our enum to encoder-specific flag values.
-    if (e == Encoder::X264) {
-        return rc == RateControl::CBR ? QStringLiteral("cbr") :
-               rc == RateControl::VBR ? QStringLiteral("vbr") :
-                                        QStringLiteral("crf");
-    }
-    if (e == Encoder::NVENC_H264) {
-        return rc == RateControl::CBR ? QStringLiteral("cbr") :
-               rc == RateControl::VBR ? QStringLiteral("vbr_hq") :
-                                        QStringLiteral("constqp");
+    // Map our enum to encoder-specific ffmpeg `-rc` flag values.
+    switch (e) {
+        case Encoder::X264:
+            return rc == RateControl::CBR ? QStringLiteral("cbr") :
+                   rc == RateControl::VBR ? QStringLiteral("vbr") :
+                                            QStringLiteral("crf");
+        case Encoder::NVENC_H264:
+            return rc == RateControl::CBR ? QStringLiteral("cbr") :
+                   rc == RateControl::VBR ? QStringLiteral("vbr_hq") :
+                                            QStringLiteral("constqp");
+        case Encoder::QSV_H264:
+            // h264_qsv: cbr / vbr / icq (quality target).
+            return rc == RateControl::CBR ? QStringLiteral("cbr") :
+                   rc == RateControl::VBR ? QStringLiteral("vbr") :
+                                            QStringLiteral("icq");
+        case Encoder::AMF_H264:
+            // h264_amf: cbr / vbr_peak / cqp.
+            return rc == RateControl::CBR ? QStringLiteral("cbr") :
+                   rc == RateControl::VBR ? QStringLiteral("vbr_peak") :
+                                            QStringLiteral("cqp");
     }
     return QStringLiteral("cbr");
 }
