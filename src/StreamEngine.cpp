@@ -124,17 +124,36 @@ QStringList StreamEngine::buildFfmpegArgs(const StreamConfig& cfg,
     }
     args << "-pix_fmt" << "yuv420p"
          << "-b:v" << QString("%1k").arg(cfg.videoBitrateKbps)
-         << "-maxrate" << QString("%1k").arg(cfg.videoBitrateKbps)
-         << "-bufsize" << QString("%1k").arg(cfg.videoBitrateKbps * 2)
          << "-g" << QString::number(cfg.fps * cfg.keyframeIntervalSec)
          << "-keyint_min" << QString::number(cfg.fps * cfg.keyframeIntervalSec)
          << "-r" << QString::number(cfg.fps);
 
-    if (cfg.rateControl == RateControl::CBR && cfg.encoder == Encoder::X264) {
-        // libx264 has no CBR flag — emulate with -nal-hrd cbr + maxrate=bufsize.
-        args << "-x264-params"
-             << QString("nal-hrd=cbr:keyint=%1:min-keyint=%1")
-                    .arg(cfg.fps * cfg.keyframeIntervalSec);
+    // Rate control. CBR pins maxrate=bitrate so the upload stays predictable
+    // (Twitch's recommendation). VBR lets maxrate float a bit. CQP/CRF means
+    // quality-target mode and we don't pin maxrate at all.
+    const QString rcMode = rateControlMode(cfg.rateControl, cfg.encoder);
+    if (cfg.encoder == Encoder::X264) {
+        if (cfg.rateControl == RateControl::CBR) {
+            // libx264 has no CBR flag — emulate via nal-hrd=cbr + maxrate=bitrate.
+            args << "-maxrate" << QString("%1k").arg(cfg.videoBitrateKbps)
+                 << "-bufsize" << QString("%1k").arg(cfg.videoBitrateKbps * 2)
+                 << "-x264-params"
+                 << QString("nal-hrd=cbr:keyint=%1:min-keyint=%1")
+                        .arg(cfg.fps * cfg.keyframeIntervalSec);
+        } else if (cfg.rateControl == RateControl::VBR) {
+            args << "-maxrate" << QString("%1k").arg(cfg.videoBitrateKbps * 3 / 2)
+                 << "-bufsize" << QString("%1k").arg(cfg.videoBitrateKbps * 2);
+        } else { // CQP -> CRF for libx264
+            args << "-crf" << QStringLiteral("23");
+        }
+    } else {
+        // Hardware encoders take an explicit -rc flag.
+        args << "-rc" << rcMode;
+        if (cfg.rateControl == RateControl::CBR ||
+            cfg.rateControl == RateControl::VBR) {
+            args << "-maxrate" << QString("%1k").arg(cfg.videoBitrateKbps)
+                 << "-bufsize" << QString("%1k").arg(cfg.videoBitrateKbps * 2);
+        }
     }
 
     // ---- Audio encoder ----
@@ -165,7 +184,13 @@ void StreamEngine::start(const StreamConfig& cfg,
     }
 
     const QStringList args = buildFfmpegArgs(cfg, target, source);
-    emit logLine(QStringLiteral("$ ffmpeg ") + args.join(' '));
+    // Mask the RTMP URL (last argument) before logging — it contains the
+    // stream key and the log view is visible on screen.
+    QStringList loggable = args;
+    if (!loggable.isEmpty()) {
+        loggable.last() = QStringLiteral("<rtmp-url-with-stream-key-hidden>");
+    }
+    emit logLine(QStringLiteral("$ ffmpeg ") + loggable.join(' '));
     m_proc->setArguments(args);
     m_proc->start();
     if (!m_proc->waitForStarted(3000)) {
