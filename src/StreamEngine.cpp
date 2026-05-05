@@ -182,9 +182,14 @@ QStringList StreamEngine::buildFfmpegArgs(const StreamConfig& cfg,
     } else {
         // Hardware encoders take an explicit -rc flag.
         args << "-rc" << rcMode;
-        if (cfg.rateControl == RateControl::CBR ||
-            cfg.rateControl == RateControl::VBR) {
+        if (cfg.rateControl == RateControl::CBR) {
             args << "-maxrate" << QString("%1k").arg(cfg.videoBitrateKbps)
+                 << "-bufsize" << QString("%1k").arg(cfg.videoBitrateKbps * 2);
+        } else if (cfg.rateControl == RateControl::VBR) {
+            // Let peaks float to ~1.5x like the x264 branch, otherwise the
+            // encoder is effectively pinned at the target and VBR behaves
+            // identically to CBR.
+            args << "-maxrate" << QString("%1k").arg(cfg.videoBitrateKbps * 3 / 2)
                  << "-bufsize" << QString("%1k").arg(cfg.videoBitrateKbps * 2);
         }
     }
