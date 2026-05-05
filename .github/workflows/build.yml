@@ -60,7 +60,17 @@ jobs:
           $stage = "stage/LumenStream"
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
           Copy-Item "build/Release/LumenStream.exe" $stage
-          & "$env:Qt6_DIR/../../../bin/windeployqt.exe" `
+
+          # Resolve windeployqt: install-qt-action sets QT_ROOT_DIR.
+          $qtRoot = $env:QT_ROOT_DIR
+          if (-not $qtRoot) { $qtRoot = $env:IQTA_QT_DIR }
+          if (-not $qtRoot) {
+            # Fallback: derive from Qt6_DIR (.../lib/cmake/Qt6).
+            $qtRoot = Resolve-Path (Join-Path $env:Qt6_DIR '..\..\..')
+          }
+          $deploy = Join-Path $qtRoot 'bin\windeployqt.exe'
+          Write-Host "Using windeployqt at: $deploy"
+          & $deploy `
               --release --no-translations --no-system-d3d-compiler `
               --no-opengl-sw --no-quick-import `
               "$stage/LumenStream.exe"
