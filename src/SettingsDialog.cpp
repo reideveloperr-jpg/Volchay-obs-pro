@@ -1,22 +1,16 @@
 #include "SettingsDialog.h"
 
-#include "Devices.h"
-
-#include <QButtonGroup>
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
-#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
-#include <QRadioButton>
 #include <QSettings>
 #include <QSpinBox>
-#include <QStackedWidget>
 #include <QTabWidget>
 #include <QVBoxLayout>
 
@@ -24,20 +18,11 @@ namespace lumen {
 
 namespace {
 
-// QSettings keys live in one place so a typo in one accessor doesn't
-// silently desynchronize from another.
 constexpr auto K_PRESET    = "stream/presetId";
 constexpr auto K_RTMP      = "stream/rtmpUrl";
 constexpr auto K_KEY       = "stream/streamKey";
 constexpr auto K_REMEMBER  = "stream/rememberStreamKey";
-
-constexpr auto K_VIDEO_MODE     = "sources/videoMode";
-constexpr auto K_SCREEN_INDEX   = "sources/screenIndex";
-constexpr auto K_WINDOW_TITLE   = "sources/windowTitle";
-constexpr auto K_MIC_ENABLED    = "sources/micEnabled";
-constexpr auto K_MIC_DEVICE     = "sources/micDevice";
-constexpr auto K_DESKAUD_ENABLED = "sources/desktopAudioEnabled";
-constexpr auto K_DESKAUD_DEVICE  = "sources/desktopAudioDevice";
+constexpr auto K_SOURCE_LIST = "sources/list";  // JSON array
 
 constexpr auto K_W         = "encoder/widthPx";
 constexpr auto K_H         = "encoder/heightPx";
@@ -64,13 +49,7 @@ void saveSettings(const Settings& s) {
     else q.remove(K_KEY);
     q.setValue(K_REMEMBER, s.rememberStreamKey);
 
-    q.setValue(K_VIDEO_MODE,     int(s.sources.videoMode));
-    q.setValue(K_SCREEN_INDEX,   s.sources.screenIndex);
-    q.setValue(K_WINDOW_TITLE,   s.sources.windowTitle);
-    q.setValue(K_MIC_ENABLED,    s.sources.micEnabled);
-    q.setValue(K_MIC_DEVICE,     s.sources.micDeviceId);
-    q.setValue(K_DESKAUD_ENABLED, s.sources.desktopAudioEnabled);
-    q.setValue(K_DESKAUD_DEVICE,  s.sources.desktopAudioDeviceId);
+    q.setValue(K_SOURCE_LIST, serializeSources(s.sources));
 
     q.setValue(K_W,        s.config.widthPx);
     q.setValue(K_H,        s.config.heightPx);
@@ -96,14 +75,7 @@ Settings loadSettings() {
     s.target.streamKey = q.value(K_KEY).toString();
     s.rememberStreamKey = q.value(K_REMEMBER, true).toBool();
 
-    s.sources.videoMode    = static_cast<VideoSourceMode>(
-        q.value(K_VIDEO_MODE, int(s.sources.videoMode)).toInt());
-    s.sources.screenIndex  = q.value(K_SCREEN_INDEX, s.sources.screenIndex).toInt();
-    s.sources.windowTitle  = q.value(K_WINDOW_TITLE, s.sources.windowTitle).toString();
-    s.sources.micEnabled   = q.value(K_MIC_ENABLED, s.sources.micEnabled).toBool();
-    s.sources.micDeviceId  = q.value(K_MIC_DEVICE, s.sources.micDeviceId).toString();
-    s.sources.desktopAudioEnabled = q.value(K_DESKAUD_ENABLED, s.sources.desktopAudioEnabled).toBool();
-    s.sources.desktopAudioDeviceId = q.value(K_DESKAUD_DEVICE, s.sources.desktopAudioDeviceId).toString();
+    s.sources = deserializeSources(q.value(K_SOURCE_LIST).toString());
 
     s.config.widthPx       = q.value(K_W,      s.config.widthPx).toInt();
     s.config.heightPx      = q.value(K_H,      s.config.heightPx).toInt();
@@ -129,19 +101,16 @@ SettingsDialog::SettingsDialog(const Settings& initial,
     : QDialog(parent), m_settings(initial), m_theme(theme) {
     setWindowTitle(tr("Настройки — Lumen Stream"));
     setModal(true);
-    resize(640, 600);
+    resize(560, 520);
 
     auto* tabs = new QTabWidget(this);
     auto* streamTab = new QWidget;
-    auto* sourcesTab = new QWidget;
     auto* encoderTab = new QWidget;
     auto* appearanceTab = new QWidget;
     buildStreamTab(streamTab);
-    buildSourcesTab(sourcesTab);
     buildEncoderTab(encoderTab);
     buildAppearanceTab(appearanceTab);
     tabs->addTab(streamTab, tr("Стрим"));
-    tabs->addTab(sourcesTab, tr("Источники"));
     tabs->addTab(encoderTab, tr("Кодировщик"));
     tabs->addTab(appearanceTab, tr("Внешний вид"));
 
@@ -192,113 +161,6 @@ void SettingsDialog::buildStreamTab(QWidget* tab) {
     form->addRow(tr("RTMP-сервер"), m_rtmpEdit);
     form->addRow(tr("Stream Key"), m_streamKeyEdit);
     form->addRow(QString(), m_rememberKey);
-}
-
-void SettingsDialog::buildSourcesTab(QWidget* tab) {
-    auto* root = new QVBoxLayout(tab);
-    root->setSpacing(14);
-
-    // ---- Video group ----
-    auto* videoGroup = new QGroupBox(tr("Видео"));
-    auto* videoLay = new QVBoxLayout(videoGroup);
-
-    m_videoScreenRadio = new QRadioButton(tr("Захват экрана (монитор)"));
-    m_videoWindowRadio = new QRadioButton(tr("Захват окна по заголовку (только Windows)"));
-    m_videoTestRadio   = new QRadioButton(tr("Тестовая картинка (testsrc2 + sine)"));
-    m_videoModeGroup = new QButtonGroup(this);
-    m_videoModeGroup->addButton(m_videoScreenRadio, int(VideoSourceMode::Screen));
-    m_videoModeGroup->addButton(m_videoWindowRadio, int(VideoSourceMode::Window));
-    m_videoModeGroup->addButton(m_videoTestRadio,   int(VideoSourceMode::TestPattern));
-
-    m_videoOptionsStack = new QStackedWidget;
-
-    auto* screenPage = new QWidget;
-    {
-        auto* lay = new QFormLayout(screenPage);
-        lay->setContentsMargins(0, 4, 0, 0);
-        m_screenCombo = new QComboBox;
-        lay->addRow(tr("Монитор"), m_screenCombo);
-    }
-    auto* windowPage = new QWidget;
-    {
-        auto* lay = new QFormLayout(windowPage);
-        lay->setContentsMargins(0, 4, 0, 0);
-        m_windowTitleEdit = new QLineEdit;
-        m_windowTitleEdit->setPlaceholderText(
-            tr("Точный заголовок окна (как в taskbar)"));
-        lay->addRow(tr("Заголовок окна"), m_windowTitleEdit);
-    }
-    auto* testPage = new QWidget;
-    {
-        auto* lay = new QVBoxLayout(testPage);
-        lay->setContentsMargins(0, 4, 0, 0);
-        auto* hint = new QLabel(tr(
-            "ffmpeg сгенерирует движущийся testsrc2 + 440 Hz sine. "
-            "Полезно чтобы убедиться что RTMP проходит без живого источника."));
-        hint->setWordWrap(true);
-        hint->setProperty("role", "sectionHeader");
-        lay->addWidget(hint);
-    }
-
-    m_videoOptionsStack->addWidget(screenPage);  // index matches VideoSourceMode
-    m_videoOptionsStack->addWidget(windowPage);
-    m_videoOptionsStack->addWidget(testPage);
-
-    videoLay->addWidget(m_videoScreenRadio);
-    videoLay->addWidget(m_videoWindowRadio);
-    videoLay->addWidget(m_videoTestRadio);
-    videoLay->addWidget(m_videoOptionsStack);
-
-#if !defined(Q_OS_WIN)
-    // Window-title capture relies on gdigrab title=, which only exists on
-    // Windows. Disable the radio elsewhere with an explanatory tooltip.
-    m_videoWindowRadio->setEnabled(false);
-    m_videoWindowRadio->setToolTip(
-        tr("Захват по заголовку окна доступен только в Windows-сборке."));
-#endif
-
-    connect(m_videoScreenRadio, &QRadioButton::toggled, this, &SettingsDialog::onVideoModeChanged);
-    connect(m_videoWindowRadio, &QRadioButton::toggled, this, &SettingsDialog::onVideoModeChanged);
-    connect(m_videoTestRadio,   &QRadioButton::toggled, this, &SettingsDialog::onVideoModeChanged);
-
-    // ---- Audio: microphone ----
-    auto* micGroup = new QGroupBox(tr("Микрофон"));
-    auto* micLay = new QVBoxLayout(micGroup);
-    m_micEnable = new QCheckBox(tr("Включить захват микрофона"));
-    m_micCombo  = new QComboBox;
-    m_micCombo->setEnabled(false);
-    connect(m_micEnable, &QCheckBox::toggled, m_micCombo, &QWidget::setEnabled);
-    micLay->addWidget(m_micEnable);
-    micLay->addWidget(m_micCombo);
-
-    // ---- Audio: desktop ----
-    auto* deskGroup = new QGroupBox(tr("Звук рабочего стола"));
-    auto* deskLay = new QVBoxLayout(deskGroup);
-    m_desktopAudioEnable = new QCheckBox(tr("Включить захват звука рабочего стола"));
-    m_desktopAudioCombo  = new QComboBox;
-    m_desktopAudioCombo->setEnabled(false);
-    connect(m_desktopAudioEnable, &QCheckBox::toggled,
-            m_desktopAudioCombo, &QWidget::setEnabled);
-    deskLay->addWidget(m_desktopAudioEnable);
-    deskLay->addWidget(m_desktopAudioCombo);
-
-    auto* refresh = new QPushButton(tr("Обновить список устройств"));
-    refresh->setProperty("role", "secondary");
-    connect(refresh, &QPushButton::clicked,
-            this, &SettingsDialog::onRefreshDevices);
-
-    auto* hintRow = new QLabel(tr(
-        "Если выбраны и микрофон, и звук рабочего стола — они микшируются "
-        "в одну дорожку через ffmpeg amix."));
-    hintRow->setWordWrap(true);
-    hintRow->setProperty("role", "sectionHeader");
-
-    root->addWidget(videoGroup);
-    root->addWidget(micGroup);
-    root->addWidget(deskGroup);
-    root->addWidget(hintRow);
-    root->addWidget(refresh, 0, Qt::AlignLeft);
-    root->addStretch(1);
 }
 
 void SettingsDialog::buildEncoderTab(QWidget* tab) {
@@ -365,54 +227,6 @@ void SettingsDialog::buildAppearanceTab(QWidget* tab) {
     form->addRow(QString(), hint);
 }
 
-void SettingsDialog::populateDeviceCombos() {
-    // Screens.
-    m_screenCombo->clear();
-    const auto screens = enumerateScreens();
-    for (const auto& s : screens) {
-        m_screenCombo->addItem(s.label, s.index);
-    }
-    if (m_screenCombo->count() == 0) {
-        m_screenCombo->addItem(tr("(дисплеи не обнаружены)"), 0);
-    }
-    int sIdx = m_screenCombo->findData(m_settings.sources.screenIndex);
-    m_screenCombo->setCurrentIndex(sIdx >= 0 ? sIdx : 0);
-
-    // Mics — preserve user's saved selection if it's still in the list.
-    m_micCombo->clear();
-    const auto mics = enumerateMicrophones();
-    for (const auto& d : mics) m_micCombo->addItem(d.label, d.id);
-    if (m_micCombo->count() == 0) {
-        m_micCombo->addItem(tr("(микрофоны не найдены)"), QString());
-    }
-    int mIdx = m_micCombo->findData(m_settings.sources.micDeviceId);
-    if (mIdx < 0 && !m_settings.sources.micDeviceId.isEmpty()) {
-        // Saved device disappeared; surface it anyway as "(missing)" so
-        // the user can see *why* their stream stopped working.
-        m_micCombo->addItem(
-            tr("%1 (не найден сейчас)").arg(m_settings.sources.micDeviceId),
-            m_settings.sources.micDeviceId);
-        mIdx = m_micCombo->count() - 1;
-    }
-    if (mIdx >= 0) m_micCombo->setCurrentIndex(mIdx);
-
-    // Desktop audio — same treatment as mics.
-    m_desktopAudioCombo->clear();
-    const auto desks = enumerateDesktopAudio();
-    for (const auto& d : desks) m_desktopAudioCombo->addItem(d.label, d.id);
-    if (m_desktopAudioCombo->count() == 0) {
-        m_desktopAudioCombo->addItem(tr("(устройств не найдено)"), QString());
-    }
-    int dIdx = m_desktopAudioCombo->findData(m_settings.sources.desktopAudioDeviceId);
-    if (dIdx < 0 && !m_settings.sources.desktopAudioDeviceId.isEmpty()) {
-        m_desktopAudioCombo->addItem(
-            tr("%1 (не найдено сейчас)").arg(m_settings.sources.desktopAudioDeviceId),
-            m_settings.sources.desktopAudioDeviceId);
-        dIdx = m_desktopAudioCombo->count() - 1;
-    }
-    if (dIdx >= 0) m_desktopAudioCombo->setCurrentIndex(dIdx);
-}
-
 void SettingsDialog::loadFromSettings() {
     int idx = m_presetCombo->findData(m_settings.presetId);
     m_presetCombo->setCurrentIndex(idx >= 0 ? idx : (m_presetCombo->count() - 1));
@@ -420,21 +234,6 @@ void SettingsDialog::loadFromSettings() {
     m_rtmpEdit->setText(m_settings.target.rtmpUrl);
     m_streamKeyEdit->setText(m_settings.target.streamKey);
     m_rememberKey->setChecked(m_settings.rememberStreamKey);
-
-    populateDeviceCombos();
-
-    switch (m_settings.sources.videoMode) {
-        case VideoSourceMode::Screen:      m_videoScreenRadio->setChecked(true); break;
-        case VideoSourceMode::Window:      m_videoWindowRadio->setChecked(true); break;
-        case VideoSourceMode::TestPattern: m_videoTestRadio->setChecked(true);   break;
-    }
-    m_windowTitleEdit->setText(m_settings.sources.windowTitle);
-    onVideoModeChanged();
-
-    m_micEnable->setChecked(m_settings.sources.micEnabled);
-    m_micCombo->setEnabled(m_settings.sources.micEnabled);
-    m_desktopAudioEnable->setChecked(m_settings.sources.desktopAudioEnabled);
-    m_desktopAudioCombo->setEnabled(m_settings.sources.desktopAudioEnabled);
 
     applyConfigToInputs(m_settings.config);
 
@@ -458,19 +257,14 @@ void SettingsDialog::applyConfigToInputs(const StreamConfig& cfg) {
 }
 
 void SettingsDialog::onPresetChanged(int) {
-    // Don't auto-apply on change; the user has to press "Apply" so we
-    // never silently overwrite their custom encoder tweaks just because
-    // they were inspecting the preset list.
+    // No auto-apply.
 }
 
 void SettingsDialog::onApplyPreset() {
     const QString id = m_presetCombo->currentData().toString();
-    if (id.isEmpty()) return; // "Custom"
+    if (id.isEmpty()) return;
     if (auto* p = PresetManager::findById(id)) {
         applyConfigToInputs(p->config);
-        // audioSampleRateHz and profile have no UI controls; carry them
-        // through directly so writeBackFromUi() preserves the preset's
-        // intended values instead of stale data from m_settings.
         m_settings.config.audioSampleRateHz = p->config.audioSampleRateHz;
         m_settings.config.profile = p->config.profile;
     }
@@ -487,26 +281,6 @@ void SettingsDialog::onPickAccent() {
     }
 }
 
-void SettingsDialog::onRefreshDevices() {
-    // Snapshot current selections back into m_settings so populate() can
-    // reapply them; user expects "Refresh" to keep their pick if it's
-    // still present, not silently reset to the first device.
-    if (m_micCombo->currentIndex() >= 0)
-        m_settings.sources.micDeviceId = m_micCombo->currentData().toString();
-    if (m_desktopAudioCombo->currentIndex() >= 0)
-        m_settings.sources.desktopAudioDeviceId =
-            m_desktopAudioCombo->currentData().toString();
-    if (m_screenCombo->currentIndex() >= 0)
-        m_settings.sources.screenIndex = m_screenCombo->currentData().toInt();
-    populateDeviceCombos();
-}
-
-void SettingsDialog::onVideoModeChanged() {
-    int id = m_videoModeGroup->checkedId();
-    if (id < 0) return;
-    m_videoOptionsStack->setCurrentIndex(id);
-}
-
 void SettingsDialog::writeBackFromUi() {
     m_settings.presetId = m_presetCombo->currentData().toString();
     m_settings.target.rtmpUrl = m_rtmpEdit->text().trimmed();
@@ -515,19 +289,6 @@ void SettingsDialog::writeBackFromUi() {
     }
     m_settings.target.streamKey = m_streamKeyEdit->text().trimmed();
     m_settings.rememberStreamKey = m_rememberKey->isChecked();
-
-    int vmodeId = m_videoModeGroup->checkedId();
-    if (vmodeId >= 0) {
-        m_settings.sources.videoMode = static_cast<VideoSourceMode>(vmodeId);
-    }
-    m_settings.sources.screenIndex = m_screenCombo->currentData().toInt();
-    m_settings.sources.windowTitle = m_windowTitleEdit->text().trimmed();
-    m_settings.sources.micEnabled = m_micEnable->isChecked();
-    m_settings.sources.micDeviceId = m_micCombo->currentData().toString();
-    m_settings.sources.micDeviceLabel = m_micCombo->currentText();
-    m_settings.sources.desktopAudioEnabled = m_desktopAudioEnable->isChecked();
-    m_settings.sources.desktopAudioDeviceId = m_desktopAudioCombo->currentData().toString();
-    m_settings.sources.desktopAudioDeviceLabel = m_desktopAudioCombo->currentText();
 
     m_settings.config.widthPx = m_widthSpin->value();
     m_settings.config.heightPx = m_heightSpin->value();

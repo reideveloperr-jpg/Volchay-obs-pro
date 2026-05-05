@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PresetManager.h"
+#include "Source.h"
 
 #include <QObject>
 #include <QProcess>
@@ -8,34 +9,6 @@
 #include <QTimer>
 
 namespace lumen {
-
-// What kind of pixels the encoder consumes. Renamed from the original
-// VideoSource so the new "Window" mode is part of a single enum.
-enum class VideoSourceMode {
-    Screen,        // gdigrab (Win), x11grab (Linux), avfoundation (macOS)
-    Window,        // gdigrab title=<window-title> (Windows only)
-    TestPattern,   // ffmpeg lavfi testsrc — useful to verify RTMP without real capture
-};
-
-// Aggregates the selectable inputs for a stream. Splitting microphone
-// and desktop audio means the user can run with one, both, or neither.
-// When both are enabled the StreamEngine mixes them with amix=inputs=2.
-struct SourceConfig {
-    // ---- Video ----
-    VideoSourceMode videoMode    = VideoSourceMode::Screen;
-    int             screenIndex  = 0;       // index into QGuiApplication::screens()
-    QString         windowTitle;             // Window mode only
-
-    // ---- Audio: microphone ----
-    bool            micEnabled        = false;
-    QString         micDeviceId;             // platform-specific device handle
-    QString         micDeviceLabel;          // for UI / logging only
-
-    // ---- Audio: desktop / system ----
-    bool            desktopAudioEnabled  = false;
-    QString         desktopAudioDeviceId;
-    QString         desktopAudioDeviceLabel;
-};
 
 struct StreamTarget {
     // Twitch ingest URL — see https://help.twitch.tv/s/twitch-ingest-recommendation
@@ -46,6 +19,10 @@ struct StreamTarget {
 // Wraps a single ffmpeg child process that pushes RTMP to Twitch.
 // All ffmpeg argv generation, process lifecycle, log scraping, and
 // status signalling lives here so the UI layer never touches QProcess.
+//
+// In Phase 1 the engine streams a single video source at a time: the
+// first enabled video entry in `SourceList` is sent over the wire, and
+// every enabled audio entry is mixed into one track via amix.
 class StreamEngine : public QObject {
     Q_OBJECT
 public:
@@ -58,12 +35,13 @@ public:
     // can show a "preview command" and so it can be unit-tested.
     static QStringList buildFfmpegArgs(const StreamConfig& cfg,
                                        const StreamTarget& target,
-                                       const SourceConfig& sources);
+                                       const SourceList& sources,
+                                       QString* failureReason = nullptr);
 
 public slots:
     void start(const StreamConfig& cfg,
                const StreamTarget& target,
-               const SourceConfig& sources);
+               const SourceList& sources);
     void stop();
 
 signals:

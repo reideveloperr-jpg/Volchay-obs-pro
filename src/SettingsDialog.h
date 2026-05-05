@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PresetManager.h"
+#include "Source.h"
 #include "StreamEngine.h"
 #include "ThemeManager.h"
 
@@ -10,29 +11,24 @@ class QLineEdit;
 class QSpinBox;
 class QComboBox;
 class QCheckBox;
-class QRadioButton;
-class QButtonGroup;
-class QStackedWidget;
 
 namespace lumen {
 
-// Settings holds everything the streamer persists between launches and
-// the StreamEngine needs at run time. It's deliberately a flat struct so
-// QSettings serialization stays trivial and the same value can be passed
-// across thread boundaries without ownership concerns.
+// Settings holds everything the streamer persists between launches.
+// `sources` lives here so it travels through the same load/save path as
+// the rest of the user's preferences, but the source-list UI lives on
+// the main window — not in this dialog.
 struct Settings {
     StreamConfig  config;
     StreamTarget  target;
-    SourceConfig  sources;
+    SourceList    sources;        // list of OBS-style sources
     QString       presetId = QStringLiteral("twitch-1080p60");
     Theme         theme    = Theme::Blackout;
     QColor        accent   = QColor(255, 153, 0); // amber-orange
     bool          rememberStreamKey = true;
 };
 
-// Modal preferences dialog. Tabbed: "Стрим" (preset + stream key),
-// "Источники" (display/window selection + mic + desktop audio),
-// "Кодировщик" (manual overrides), "Внешний вид" (theme + accent).
+// Modal preferences dialog. Tabs: Стрим / Кодировщик / Внешний вид.
 class SettingsDialog : public QDialog {
     Q_OBJECT
 public:
@@ -46,19 +42,15 @@ private slots:
     void onPresetChanged(int index);
     void onApplyPreset();
     void onPickAccent();
-    void onRefreshDevices();
-    void onVideoModeChanged();
     void accept() override;
 
 private:
     void buildStreamTab(QWidget* tab);
-    void buildSourcesTab(QWidget* tab);
     void buildEncoderTab(QWidget* tab);
     void buildAppearanceTab(QWidget* tab);
     void writeBackFromUi();
     void loadFromSettings();
     void applyConfigToInputs(const StreamConfig& cfg);
-    void populateDeviceCombos();
 
     Settings        m_settings;
     ThemeManager*   m_theme;
@@ -68,21 +60,6 @@ private:
     QLineEdit*  m_rtmpEdit     = nullptr;
     QLineEdit*  m_streamKeyEdit = nullptr;
     QCheckBox*  m_rememberKey  = nullptr;
-
-    // Sources tab — video
-    QRadioButton* m_videoScreenRadio  = nullptr;
-    QRadioButton* m_videoWindowRadio  = nullptr;
-    QRadioButton* m_videoTestRadio    = nullptr;
-    QButtonGroup* m_videoModeGroup    = nullptr;
-    QStackedWidget* m_videoOptionsStack = nullptr;
-    QComboBox*  m_screenCombo = nullptr;
-    QLineEdit*  m_windowTitleEdit = nullptr;
-
-    // Sources tab — audio
-    QCheckBox*  m_micEnable = nullptr;
-    QComboBox*  m_micCombo  = nullptr;
-    QCheckBox*  m_desktopAudioEnable = nullptr;
-    QComboBox*  m_desktopAudioCombo  = nullptr;
 
     // Encoder tab
     QSpinBox*   m_widthSpin    = nullptr;

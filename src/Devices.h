@@ -23,8 +23,17 @@ struct AudioDevice {
     QString label;
 };
 
+// One entry per video capture device (webcam, capture card). `id` is
+// the platform-specific ffmpeg input string (dshow video name on
+// Windows, avfoundation index on macOS, /dev/videoN path on Linux).
+struct VideoDevice {
+    QString id;
+    QString label;
+};
+
 QList<ScreenInfo>  enumerateScreens();
 QList<AudioDevice> enumerateMicrophones();
 QList<AudioDevice> enumerateDesktopAudio();
+QList<VideoDevice> enumerateVideoCaptureDevices();
 
 } // namespace lumen

@@ -1,5 +1,6 @@
 #include "Devices.h"
 
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QProcess>
 #include <QRect>
@@ -48,6 +49,54 @@ QStringList parseFfmpegDshowAudio(const QString& text) {
         if (m.hasMatch() && !l.contains("Alternative name", Qt::CaseInsensitive)) {
             out << m.captured(1);
         }
+    }
+    return out;
+}
+
+// Same shape as parseFfmpegDshowAudio but pulls names from the "DirectShow
+// video devices" block instead.
+QStringList parseFfmpegDshowVideo(const QString& text) {
+    QStringList out;
+    bool videoBlock = false;
+    const QStringList lines = text.split('\n');
+    static const QRegularExpression nameRe(R"(\"([^\"]+)\")");
+    for (const QString& raw : lines) {
+        const QString l = raw.trimmed();
+        if (l.contains("DirectShow video devices", Qt::CaseInsensitive)) {
+            videoBlock = true;
+            continue;
+        }
+        if (l.contains("DirectShow audio devices", Qt::CaseInsensitive)) {
+            videoBlock = false;
+            continue;
+        }
+        if (!videoBlock) continue;
+        const auto m = nameRe.match(l);
+        if (m.hasMatch() && !l.contains("Alternative name", Qt::CaseInsensitive)) {
+            out << m.captured(1);
+        }
+    }
+    return out;
+}
+
+QStringList parseFfmpegAvfoundationVideo(const QString& text) {
+    QStringList out;
+    bool videoBlock = false;
+    const QStringList lines = text.split('\n');
+    static const QRegularExpression entryRe(R"(\[\d+\]\s+(.+))");
+    for (const QString& raw : lines) {
+        const QString l = raw.trimmed();
+        if (l.contains("AVFoundation video devices", Qt::CaseInsensitive)) {
+            videoBlock = true;
+            continue;
+        }
+        if (l.contains("AVFoundation audio devices", Qt::CaseInsensitive)) {
+            videoBlock = false;
+            continue;
+        }
+        if (!videoBlock) continue;
+        const auto m = entryRe.match(l);
+        if (m.hasMatch()) out << m.captured(1).trimmed();
     }
     return out;
 }
@@ -146,6 +195,20 @@ QList<AudioDevice> enumerateDesktopAudio() {
     return out;
 }
 
+QList<VideoDevice> enumerateVideoCaptureDevices() {
+    QList<VideoDevice> out;
+    const QString text = runAndCapture(
+        QStringLiteral("ffmpeg"),
+        {"-hide_banner", "-list_devices", "true", "-f", "dshow", "-i", "dummy"});
+    for (const QString& name : parseFfmpegDshowVideo(text)) {
+        VideoDevice d;
+        d.id = name;
+        d.label = name;
+        out.push_back(d);
+    }
+    return out;
+}
+
 #elif defined(Q_OS_MACOS)
 
 QList<AudioDevice> enumerateMicrophones() {
@@ -170,6 +233,21 @@ QList<AudioDevice> enumerateDesktopAudio() {
     QList<AudioDevice> out = enumerateMicrophones();
     for (auto& d : out) {
         d.label = QStringLiteral("(loopback) %1").arg(d.label);
+    }
+    return out;
+}
+
+QList<VideoDevice> enumerateVideoCaptureDevices() {
+    QList<VideoDevice> out;
+    const QString text = runAndCapture(
+        QStringLiteral("ffmpeg"),
+        {"-hide_banner", "-f", "avfoundation", "-list_devices", "true", "-i", ""});
+    int idx = 0;
+    for (const QString& name : parseFfmpegAvfoundationVideo(text)) {
+        VideoDevice d;
+        d.id = QString::number(idx++);
+        d.label = name;
+        out.push_back(d);
     }
     return out;
 }
@@ -218,6 +296,23 @@ QList<AudioDevice> enumerateDesktopAudio() {
         d.id = name;
         d.label = name;
         out.push_back(d);
+    }
+    return out;
+}
+
+QList<VideoDevice> enumerateVideoCaptureDevices() {
+    QList<VideoDevice> out;
+    // Probe /dev/video0..9 — v4l2 numbers them sequentially. We don't
+    // shell out to `v4l2-ctl --list-devices` because it isn't installed
+    // by default on most distros.
+    for (int i = 0; i < 10; ++i) {
+        const QString path = QString("/dev/video%1").arg(i);
+        if (QFileInfo::exists(path)) {
+            VideoDevice d;
+            d.id = path;
+            d.label = path;
+            out.push_back(d);
+        }
     }
     return out;
 }

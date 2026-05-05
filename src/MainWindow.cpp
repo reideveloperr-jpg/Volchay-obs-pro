@@ -3,6 +3,7 @@
 #include "AccentBadge.h"
 #include "PresetManager.h"
 #include "PreviewWidget.h"
+#include "SourcesPanel.h"
 
 #include <QFrame>
 #include <QHBoxLayout>
@@ -10,6 +11,7 @@
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSplitter>
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QStyle>
@@ -204,6 +206,27 @@ void MainWindow::buildStreamPage() {
     m_preview = new PreviewWidget(m_theme);
     previewLay->addWidget(m_preview);
 
+    // Sources card on the right of the preview.
+    auto* sourcesCard = makeCard();
+    sourcesCard->setMinimumWidth(280);
+    sourcesCard->setMaximumWidth(360);
+    auto* sourcesLay = new QVBoxLayout(sourcesCard);
+    sourcesLay->setContentsMargins(16, 16, 16, 16);
+    m_sourcesPanel = new SourcesPanel(m_theme);
+    m_sourcesPanel->setSources(m_settings.sources);
+    sourcesLay->addWidget(m_sourcesPanel, 1);
+    connect(m_sourcesPanel, &SourcesPanel::sourcesChanged,
+            this, &MainWindow::onSourcesChanged);
+    connect(m_sourcesPanel, &SourcesPanel::selectionChanged,
+            this, &MainWindow::onSourceSelectionChanged);
+
+    // Compose preview + sources panel side-by-side.
+    auto* mid = new QHBoxLayout;
+    mid->setContentsMargins(0, 0, 0, 0);
+    mid->setSpacing(20);
+    mid->addWidget(previewCard, 1);
+    mid->addWidget(sourcesCard, 0);
+
     // Log card
     auto* logCard = makeCard();
     auto* logLay = new QVBoxLayout(logCard);
@@ -218,10 +241,14 @@ void MainWindow::buildStreamPage() {
     logLay->addWidget(m_logView);
 
     lay->addWidget(header);
-    lay->addWidget(previewCard, 1);
+    lay->addLayout(mid, 3);
     lay->addWidget(logCard, 1);
 
     m_pages->addWidget(page);
+
+    // Now that the SourcesPanel exists, wire its initial state into the
+    // preview canvas.
+    refreshActiveSourcePreview();
 }
 
 void MainWindow::buildAboutPage() {
@@ -351,6 +378,34 @@ void MainWindow::onStreamError(const QString& message) {
         m_logView->appendPlainText(QStringLiteral("[ERROR] ") + message);
     }
     statusBar()->showMessage(message, 5000);
+}
+
+void MainWindow::onSourcesChanged() {
+    if (!m_sourcesPanel) return;
+    m_settings.sources = m_sourcesPanel->sources();
+    saveSettings(m_settings);
+    refreshActiveSourcePreview();
+}
+
+void MainWindow::onSourceSelectionChanged() {
+    refreshActiveSourcePreview();
+}
+
+void MainWindow::refreshActiveSourcePreview() {
+    if (!m_preview || !m_sourcesPanel) return;
+    const auto& sources = m_sourcesPanel->sources();
+
+    // Prefer the user's currently-selected source so they can preview
+    // whatever they're configuring. Fall back to the first enabled
+    // video source — that's the one which will actually go on air.
+    int row = m_sourcesPanel->selectedIndex();
+    if (row >= 0 && row < sources.size() && sourceTypeIsVideo(sources[row].type)) {
+        m_preview->setActiveSource(&sources[row]);
+        return;
+    }
+    int idx = firstEnabledVideoIndex(sources);
+    if (idx >= 0) m_preview->setActiveSource(&sources[idx]);
+    else          m_preview->setActiveSource(nullptr);
 }
 
 } // namespace lumen

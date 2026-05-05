@@ -15,6 +15,7 @@ namespace lumen {
 
 class PreviewWidget;
 class AccentBadge;
+class SourcesPanel;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -28,6 +29,8 @@ private slots:
     void onStreamStopped(int exitCode, QProcess::ExitStatus status);
     void onStreamLog(const QString& line);
     void onStreamError(const QString& message);
+    void onSourcesChanged();
+    void onSourceSelectionChanged();
 
 private:
     void buildSidebar();
@@ -35,6 +38,7 @@ private:
     void buildAboutPage();
     void selectNav(int index);
     void refreshStreamSummary();
+    void refreshActiveSourcePreview();
 
     ThemeManager*  m_theme;
     StreamEngine*  m_engine;
@@ -52,6 +56,7 @@ private:
     QLabel*         m_bitrateLabel = nullptr;
     QPushButton*    m_goLiveButton = nullptr;
     QPlainTextEdit* m_logView = nullptr;
+    SourcesPanel*   m_sourcesPanel = nullptr;
 };
 
 } // namespace lumen
