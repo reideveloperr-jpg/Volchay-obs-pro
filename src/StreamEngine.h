@@ -9,10 +9,32 @@
 
 namespace lumen {
 
-// Source of the video frames to stream.
-enum class VideoSource {
-    Screen,        // Full screen capture (gdigrab on Win, x11grab on Linux, avfoundation on macOS)
-    TestPattern,   // ffmpeg lavfi testsrc — useful for verifying RTMP without real capture
+// What kind of pixels the encoder consumes. Renamed from the original
+// VideoSource so the new "Window" mode is part of a single enum.
+enum class VideoSourceMode {
+    Screen,        // gdigrab (Win), x11grab (Linux), avfoundation (macOS)
+    Window,        // gdigrab title=<window-title> (Windows only)
+    TestPattern,   // ffmpeg lavfi testsrc — useful to verify RTMP without real capture
+};
+
+// Aggregates the selectable inputs for a stream. Splitting microphone
+// and desktop audio means the user can run with one, both, or neither.
+// When both are enabled the StreamEngine mixes them with amix=inputs=2.
+struct SourceConfig {
+    // ---- Video ----
+    VideoSourceMode videoMode    = VideoSourceMode::Screen;
+    int             screenIndex  = 0;       // index into QGuiApplication::screens()
+    QString         windowTitle;             // Window mode only
+
+    // ---- Audio: microphone ----
+    bool            micEnabled        = false;
+    QString         micDeviceId;             // platform-specific device handle
+    QString         micDeviceLabel;          // for UI / logging only
+
+    // ---- Audio: desktop / system ----
+    bool            desktopAudioEnabled  = false;
+    QString         desktopAudioDeviceId;
+    QString         desktopAudioDeviceLabel;
 };
 
 struct StreamTarget {
@@ -36,12 +58,12 @@ public:
     // can show a "preview command" and so it can be unit-tested.
     static QStringList buildFfmpegArgs(const StreamConfig& cfg,
                                        const StreamTarget& target,
-                                       VideoSource source);
+                                       const SourceConfig& sources);
 
 public slots:
     void start(const StreamConfig& cfg,
                const StreamTarget& target,
-               VideoSource source);
+               const SourceConfig& sources);
     void stop();
 
 signals:

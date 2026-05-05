@@ -10,6 +10,9 @@ class QLineEdit;
 class QSpinBox;
 class QComboBox;
 class QCheckBox;
+class QRadioButton;
+class QButtonGroup;
+class QStackedWidget;
 
 namespace lumen {
 
@@ -20,7 +23,7 @@ namespace lumen {
 struct Settings {
     StreamConfig  config;
     StreamTarget  target;
-    VideoSource   source = VideoSource::Screen;
+    SourceConfig  sources;
     QString       presetId = QStringLiteral("twitch-1080p60");
     Theme         theme    = Theme::Blackout;
     QColor        accent   = QColor(255, 153, 0); // amber-orange
@@ -28,6 +31,7 @@ struct Settings {
 };
 
 // Modal preferences dialog. Tabbed: "Стрим" (preset + stream key),
+// "Источники" (display/window selection + mic + desktop audio),
 // "Кодировщик" (manual overrides), "Внешний вид" (theme + accent).
 class SettingsDialog : public QDialog {
     Q_OBJECT
@@ -42,15 +46,19 @@ private slots:
     void onPresetChanged(int index);
     void onApplyPreset();
     void onPickAccent();
+    void onRefreshDevices();
+    void onVideoModeChanged();
     void accept() override;
 
 private:
     void buildStreamTab(QWidget* tab);
+    void buildSourcesTab(QWidget* tab);
     void buildEncoderTab(QWidget* tab);
     void buildAppearanceTab(QWidget* tab);
     void writeBackFromUi();
     void loadFromSettings();
     void applyConfigToInputs(const StreamConfig& cfg);
+    void populateDeviceCombos();
 
     Settings        m_settings;
     ThemeManager*   m_theme;
@@ -60,7 +68,21 @@ private:
     QLineEdit*  m_rtmpEdit     = nullptr;
     QLineEdit*  m_streamKeyEdit = nullptr;
     QCheckBox*  m_rememberKey  = nullptr;
-    QComboBox*  m_sourceCombo  = nullptr;
+
+    // Sources tab — video
+    QRadioButton* m_videoScreenRadio  = nullptr;
+    QRadioButton* m_videoWindowRadio  = nullptr;
+    QRadioButton* m_videoTestRadio    = nullptr;
+    QButtonGroup* m_videoModeGroup    = nullptr;
+    QStackedWidget* m_videoOptionsStack = nullptr;
+    QComboBox*  m_screenCombo = nullptr;
+    QLineEdit*  m_windowTitleEdit = nullptr;
+
+    // Sources tab — audio
+    QCheckBox*  m_micEnable = nullptr;
+    QComboBox*  m_micCombo  = nullptr;
+    QCheckBox*  m_desktopAudioEnable = nullptr;
+    QComboBox*  m_desktopAudioCombo  = nullptr;
 
     // Encoder tab
     QSpinBox*   m_widthSpin    = nullptr;

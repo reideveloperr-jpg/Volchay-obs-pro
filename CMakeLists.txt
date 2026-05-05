@@ -42,6 +42,8 @@ set(LUMEN_SOURCES
     src/PreviewWidget.h
     src/AccentBadge.cpp
     src/AccentBadge.h
+    src/Devices.cpp
+    src/Devices.h
 )
 
 qt_add_executable(lumen-stream WIN32 MACOSX_BUNDLE ${LUMEN_SOURCES})

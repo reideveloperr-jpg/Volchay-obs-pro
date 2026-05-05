@@ -315,7 +315,7 @@ void MainWindow::onGoLiveClicked() {
         m_engine->stop();
         return;
     }
-    m_engine->start(m_settings.config, m_settings.target, m_settings.source);
+    m_engine->start(m_settings.config, m_settings.target, m_settings.sources);
 }
 
 void MainWindow::onStreamStarted() {
