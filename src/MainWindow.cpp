@@ -285,6 +285,10 @@ void MainWindow::onSettingsClicked() {
         }
         saveSettings(m_settings);
         refreshStreamSummary();
+    } else if (m_theme && m_theme->currentTheme() != Theme::Rgb) {
+        // The dialog live-previews accent picks; revert to the saved one
+        // when the user cancels so the rest of the app stays in sync.
+        m_theme->setAccent(m_settings.accent);
     }
 }
 
