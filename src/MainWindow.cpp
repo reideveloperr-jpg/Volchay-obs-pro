@@ -278,10 +278,11 @@ void MainWindow::onSettingsClicked() {
     if (dlg.exec() == QDialog::Accepted) {
         m_settings = dlg.result();
         if (m_theme) {
+            // Order matters: setAccent first so ThemeManager::m_userAccent
+            // is up to date even under RGB. applyTheme() relies on
+            // m_userAccent to restore the static color when leaving RGB.
+            m_theme->setAccent(m_settings.accent);
             m_theme->applyTheme(m_settings.theme);
-            if (m_settings.theme != Theme::Rgb) {
-                m_theme->setAccent(m_settings.accent);
-            }
         }
         saveSettings(m_settings);
         refreshStreamSummary();
