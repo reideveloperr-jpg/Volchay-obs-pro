@@ -61,6 +61,10 @@ private:
     // single-shot timers so the GUI thread never blocks on waitForFinished.
     QTimer* m_terminateTimer;
     QTimer* m_killTimer;
+    // Set while waitForStarted() is running. onErrorOccurred() suppresses
+    // its own emission during this window so start() can produce a single,
+    // deduplicated error message.
+    bool m_swallowProcessErrors = false;
 };
 
 } // namespace lumen

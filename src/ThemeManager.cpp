@@ -27,8 +27,9 @@ void ThemeManager::applyTheme(Theme t) {
         m_rgbTimer.start();
     } else {
         m_rgbTimer.stop();
-        // Restore the user's static accent on theme switch back.
-        if (!m_accent.isValid()) m_accent = QColor(255, 153, 0);
+        // Restore the user's static accent — m_accent gets clobbered by
+        // every onRgbTick(), so we have to recover it from m_userAccent.
+        m_accent = m_userAccent.isValid() ? m_userAccent : QColor(255, 153, 0);
     }
     rebuildStylesheet();
     emit themeChanged(t);
@@ -36,14 +37,21 @@ void ThemeManager::applyTheme(Theme t) {
 
 void ThemeManager::setAccent(const QColor& color) {
     if (!color.isValid()) return;
-    m_accent = color;
-    rebuildStylesheet();
+    m_userAccent = color;
+    // Under RGB the displayed color is owned by the animation timer, so
+    // we don't touch m_accent here — but we still persist the user's pick
+    // so a later switch back to Light/Blackout restores it.
+    if (m_theme != Theme::Rgb) {
+        m_accent = color;
+        rebuildStylesheet();
+    }
     emit accentChanged(color);
 }
 
 void ThemeManager::onRgbTick() {
     m_rgbHue += 1.5; // degrees per tick
     if (m_rgbHue >= 360.0) m_rgbHue -= 360.0;
+    // Only mutate the display accent; m_userAccent stays untouched.
     m_accent = QColor::fromHsvF(m_rgbHue / 360.0, 0.85, 1.0);
     rebuildStylesheet();
     emit accentChanged(m_accent);

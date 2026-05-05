@@ -225,8 +225,15 @@ void StreamEngine::start(const StreamConfig& cfg,
     }
     emit logLine(QStringLiteral("$ ffmpeg ") + loggable.join(' '));
     m_proc->setArguments(args);
+    // Suppress the QProcess::errorOccurred handler while waitForStarted
+    // pumps the local event loop — otherwise a FailedToStart signal would
+    // emit a generic "ffmpeg не найден" message AND we'd emit a second one
+    // when waitForStarted returns false.
+    m_swallowProcessErrors = true;
     m_proc->start();
-    if (!m_proc->waitForStarted(3000)) {
+    const bool ok = m_proc->waitForStarted(3000);
+    m_swallowProcessErrors = false;
+    if (!ok) {
         emit errorOccurred(tr("Не удалось запустить ffmpeg. Убедись что ffmpeg установлен и доступен в PATH."));
         return;
     }
@@ -257,6 +264,7 @@ void StreamEngine::onFinished(int exitCode, QProcess::ExitStatus status) {
 }
 
 void StreamEngine::onErrorOccurred(QProcess::ProcessError err) {
+    if (m_swallowProcessErrors) return;
     QString msg;
     switch (err) {
         case QProcess::FailedToStart:

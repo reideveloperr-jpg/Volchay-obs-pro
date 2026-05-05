@@ -50,7 +50,10 @@ private:
 
     QApplication* m_app;
     Theme         m_theme = Theme::Blackout;
-    QColor        m_accent = QColor(255, 153, 0); // amber-orange
+    // m_accent is the *displayed* color, which is mutated every RGB tick.
+    // m_userAccent is the user's static pick, preserved across RGB cycles.
+    QColor        m_accent     = QColor(255, 153, 0); // amber-orange
+    QColor        m_userAccent = QColor(255, 153, 0);
     QTimer        m_rgbTimer;
     qreal         m_rgbHue = 30.0; // start near amber
 };
