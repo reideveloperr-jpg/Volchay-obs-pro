@@ -273,6 +273,11 @@ void SettingsDialog::onApplyPreset() {
     if (id.isEmpty()) return; // "Custom"
     if (auto* p = PresetManager::findById(id)) {
         applyConfigToInputs(p->config);
+        // audioSampleRateHz and profile have no UI controls; carry them
+        // through directly so writeBackFromUi() preserves the preset's
+        // intended values instead of stale data from m_settings.
+        m_settings.config.audioSampleRateHz = p->config.audioSampleRateHz;
+        m_settings.config.profile = p->config.profile;
     }
 }
 

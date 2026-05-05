@@ -83,7 +83,10 @@ QStringList platformAudioCaptureInputArgs() {
 } // namespace
 
 StreamEngine::StreamEngine(QObject* parent)
-    : QObject(parent), m_proc(new QProcess(this)) {
+    : QObject(parent),
+      m_proc(new QProcess(this)),
+      m_terminateTimer(new QTimer(this)),
+      m_killTimer(new QTimer(this)) {
     m_proc->setProgram(QStringLiteral("ffmpeg"));
     m_proc->setProcessChannelMode(QProcess::SeparateChannels);
     connect(m_proc, &QProcess::readyReadStandardError,
@@ -92,9 +95,29 @@ StreamEngine::StreamEngine(QObject* parent)
             this, &StreamEngine::onFinished);
     connect(m_proc, &QProcess::errorOccurred,
             this, &StreamEngine::onErrorOccurred);
+
+    m_terminateTimer->setSingleShot(true);
+    m_killTimer->setSingleShot(true);
+    connect(m_terminateTimer, &QTimer::timeout, this, [this] {
+        // ffmpeg ignored 'q'; ask it to exit politely.
+        if (m_proc->state() == QProcess::Running) {
+            m_proc->terminate();
+            m_killTimer->start(2000);
+        }
+    });
+    connect(m_killTimer, &QTimer::timeout, this, [this] {
+        // Still alive after terminate(); fall back to SIGKILL.
+        if (m_proc->state() == QProcess::Running) {
+            m_proc->kill();
+        }
+    });
 }
 
 StreamEngine::~StreamEngine() {
+    // Destructor must be synchronous so the QProcess doesn't outlive us;
+    // a brief block here (only at app shutdown) is acceptable.
+    m_terminateTimer->stop();
+    m_killTimer->stop();
     if (m_proc->state() != QProcess::NotRunning) {
         m_proc->kill();
         m_proc->waitForFinished(2000);
@@ -213,13 +236,10 @@ void StreamEngine::start(const StreamConfig& cfg,
 void StreamEngine::stop() {
     if (!isRunning()) return;
     // ffmpeg traps 'q' on stdin to gracefully finalize the FLV/RTMP stream.
+    // Drive the shutdown ladder via timers so we don't block the GUI thread.
+    // onFinished() will cancel any pending timer once ffmpeg actually exits.
     m_proc->write("q\n");
-    if (!m_proc->waitForFinished(3000)) {
-        m_proc->terminate();
-        if (!m_proc->waitForFinished(2000)) {
-            m_proc->kill();
-        }
-    }
+    m_terminateTimer->start(3000);
 }
 
 void StreamEngine::onReadyReadStandardError() {
@@ -231,6 +251,8 @@ void StreamEngine::onReadyReadStandardError() {
 }
 
 void StreamEngine::onFinished(int exitCode, QProcess::ExitStatus status) {
+    m_terminateTimer->stop();
+    m_killTimer->stop();
     emit stopped(exitCode, status);
 }
 

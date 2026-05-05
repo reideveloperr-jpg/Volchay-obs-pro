@@ -5,6 +5,7 @@
 #include <QObject>
 #include <QProcess>
 #include <QString>
+#include <QTimer>
 
 namespace lumen {
 
@@ -56,6 +57,10 @@ private slots:
 
 private:
     QProcess* m_proc;
+    // Async shutdown ladder: q\n -> terminate -> kill, driven by these
+    // single-shot timers so the GUI thread never blocks on waitForFinished.
+    QTimer* m_terminateTimer;
+    QTimer* m_killTimer;
 };
 
 } // namespace lumen
